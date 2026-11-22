@@ -98,6 +98,9 @@
 
   dialog { width: min(520px, 100%); max-width: 100%; margin: auto auto 0; border: 0; border-radius: 22px 22px 0 0; padding: 20px 20px calc(env(safe-area-inset-bottom) + 20px); background: var(--panel); color: var(--cream); font-family: var(--display); letter-spacing: .04em; }
   dialog::backdrop { background: rgba(0,0,0,.65); }
+  #arm { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 32px; text-align: center; background: rgba(23,18,13,.9); color: var(--mustard); font-size: 30px; font-weight: 800; text-transform: uppercase; line-height: 1.25; }
+  #arm[hidden] { display: none; }
+  .version { margin-top: 10px; text-align: center; font-size: 12px; font-weight: 500; color: var(--dim); }
   dialog h2 { margin: 0 0 14px; font-size: 24px; text-transform: uppercase; color: var(--mustard); letter-spacing: .1em; }
   .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 18px; }
   .field .hint { display: block; font-size: 13px; font-weight: 500; color: var(--dim); letter-spacing: .02em; margin-top: 2px; }
@@ -126,6 +129,8 @@
     </g>
   </symbol>
 </svg>
+
+<div id="arm" hidden><span>Tik één keer<br>om het geluid aan te zetten</span></div>
 
 <main class="app">
   <header>
@@ -190,6 +195,7 @@
   </div>
   <div id="msg"></div>
   <button class="btn wide" id="close" autofocus>Klaar</button>
+  <div class="version">Versie 3</div>
 </dialog>
 
 <script>
@@ -233,12 +239,42 @@
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
 
   function getCtx() {
-    if (!ctx) ctx = new AC({ latencyHint: 'interactive' });
+    if (!ctx) {
+      ctx = new AC({ latencyHint: 'interactive' });
+      ctx.onstatechange = renderArm;
+    }
     return ctx;
   }
+
+  // Het geluid moet "aan" staan vóór je de sample triggert, anders komt de
+  // eerste tik te laat. Een stille lus houdt de uitvoer daarna wakker.
+  let keepAlive = null;
   function wakeAudio() {
     const c = getCtx();
-    if (c.state !== 'running') c.resume().catch(() => {});
+    if (c.state !== 'running') c.resume().then(renderArm).catch(() => {});
+    if (!keepAlive) {
+      keepAlive = c.createBufferSource();
+      keepAlive.buffer = c.createBuffer(1, c.sampleRate, c.sampleRate);
+      keepAlive.loop = true;
+      keepAlive.connect(c.destination);
+      keepAlive.start();
+    }
+  }
+  function renderArm() {
+    $('arm').hidden = !ctx || ctx.state === 'running';
+  }
+
+  // Stilte aan het begin van een sample wegknippen, zodat hij direct op de tik start
+  function trimStart(buf) {
+    const n = buf.length, chs = buf.numberOfChannels, data = [];
+    for (let ch = 0; ch < chs; ch++) data.push(buf.getChannelData(ch));
+    let first = n;
+    for (const d of data) for (let i = 0; i < first; i++) if (Math.abs(d[i]) > 0.004) { first = i; break; }
+    const start = Math.max(0, first - Math.round(0.002 * buf.sampleRate));
+    if (first === n || start < 0.003 * buf.sampleRate) return buf;
+    const out = getCtx().createBuffer(chs, n - start, buf.sampleRate);
+    for (let ch = 0; ch < chs; ch++) out.getChannelData(ch).set(data[ch].subarray(start));
+    return out;
   }
 
   function demoBuffer() {
@@ -328,7 +364,7 @@
     el.textContent = lock ? 'Scherm blijft aan' : 'Let op: scherm kan uitgaan';
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') keepAwake();
+    if (document.visibilityState === 'visible') { keepAwake(); renderArm(); }
   });
 
   // ---------- opslag van eigen sample ----------
@@ -357,7 +393,7 @@
     try {
       const saved = await dbOp('readonly', s => s.get('sample'));
       if (saved && saved.bytes) {
-        full = await decode(saved.bytes); applyLength();
+        full = trimStart(await decode(saved.bytes)); applyLength();
         sampleName = saved.name;
         render();
         return;
@@ -372,7 +408,7 @@
     try {
       const r = await fetch('scratch.wav');
       if (!r.ok) throw new Error('niet gevonden');
-      full = await decode(await r.arrayBuffer());
+      full = trimStart(await decode(await r.arrayBuffer()));
       builtIn = 'Scratch (ingebouwd)';
     } catch {
       full = demoBuffer(); builtIn = 'Noodgeluid';
@@ -387,7 +423,7 @@
       const bytes = await file.arrayBuffer();
       const decoded = await decode(bytes);
       stop();
-      full = decoded; applyLength(); sampleName = file.name;
+      full = trimStart(decoded); applyLength(); sampleName = file.name;
       await dbOp('readwrite', s => s.put({ name: file.name, bytes }, 'sample'));
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     } catch {
@@ -411,6 +447,7 @@
     $('sampleHint').textContent = label;
     if (document.activeElement !== $('orig')) $('orig').value = origBpm;
     $('loop').checked = loop;
+    renderArm();
     for (const b of $('len').children) b.classList.toggle('on', Number(b.dataset.beats) === lenBeats);
     const secs = buffer ? buffer.duration.toFixed(1).replace('.', ',') + ' s' : '';
     $('lenHint').textContent = (lenBeats ? lenBeats + ' tellen per druk' : 'Hele sample per druk') + (secs ? ' (' + secs + ')' : '');
@@ -425,6 +462,8 @@
     });
     el.addEventListener('click', e => { if (e.detail === 0) fn(e); }); // toetsenbord / schermlezer
   }
+
+  $('arm').addEventListener('pointerdown', e => { e.preventDefault(); wakeAudio(); keepAwake(); });
 
   const trig = $('trigger');
   press(trig, () => { trig.classList.add('down'); trigger(); });
