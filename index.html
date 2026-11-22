@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Sabotage</title>
+<meta name="theme-color" content="#17120d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sabotage">
+<style>
+  :root {
+    --bg: #17120d;
+    --panel: #241c14;
+    --line: #3a2e21;
+    --cream: #f3e6c8;
+    --dim: #a8997a;
+    --mustard: #e8a917;
+    --mustard-2: #d99a0e;
+    --hot: #e2491b;
+    --ok: #7fbf5a;
+    --display: "Avenir Next Condensed", "DIN Condensed", Impact, "Arial Narrow", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    position: fixed; inset: 0; overflow: hidden;
+    background: var(--bg); color: var(--cream);
+    font-family: var(--display); font-weight: 700; letter-spacing: .04em;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  button { font: inherit; color: inherit; letter-spacing: inherit; border: 0; margin: 0; padding: 0; background: none; cursor: pointer; touch-action: manipulation; }
+
+  .app {
+    height: 100%; display: grid; gap: 12px;
+    grid-template-rows: auto auto 1fr auto;
+    grid-template-areas: "head" "status" "stage" "controls";
+    padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px)
+             calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 16px);
+  }
+  header { grid-area: head; display: flex; align-items: center; justify-content: space-between; }
+  h1 { margin: 0; font-size: 34px; font-weight: 800; line-height: 1; text-transform: uppercase; letter-spacing: .12em; color: var(--mustard); font-style: italic; }
+  #gear { width: 48px; height: 48px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; }
+  #gear svg { width: 24px; height: 24px; fill: var(--cream); }
+
+  .status { grid-area: status; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { font-size: 13px; text-transform: uppercase; padding: 5px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--dim); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); margin-right: 7px; }
+  .chip.ok::before { background: var(--ok); }
+  .chip.warn { color: var(--cream); border-color: var(--hot); }
+  .chip.warn::before { background: var(--hot); }
+
+  .stage { grid-area: stage; display: grid; place-items: center; min-height: 0; container-type: size; }
+  #trigger {
+    position: relative; width: min(92cqw, 92cqh); aspect-ratio: 1; border-radius: 50%;
+    background: repeating-conic-gradient(from -5deg, var(--mustard) 0 10deg, var(--mustard-2) 10deg 20deg);
+    box-shadow: 0 0 0 6px var(--bg), 0 0 0 10px var(--mustard), 0 18px 40px rgba(0,0,0,.6);
+    transition: transform .06s ease-out, filter .06s ease-out;
+  }
+  #trigger.down { transform: scale(.96); filter: brightness(1.15); }
+  #trigger.playing { box-shadow: 0 0 0 6px var(--bg), 0 0 0 10px var(--hot), 0 0 60px rgba(226,73,27,.55); }
+  #trigger .face { position: absolute; inset: 12%; width: 76%; height: 76%; fill: var(--bg); pointer-events: none; }
+  #trigger .ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); pointer-events: none; }
+  #trigger .ring circle { fill: none; stroke: var(--bg); stroke-width: 3.2; stroke-linecap: butt; stroke-dasharray: 0 100; opacity: .85; }
+
+  .controls { grid-area: controls; display: grid; gap: 12px; }
+  .tempo { display: grid; grid-template-columns: 64px 1fr 64px; gap: 12px; align-items: center; }
+  .nudge { height: 64px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); font-size: 34px; line-height: 1; }
+  .nudge:active { background: var(--line); }
+  .readout { text-align: center; line-height: 1; }
+  #bpm { font-size: 64px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .readout small { font-size: 18px; color: var(--dim); margin-left: 6px; }
+  #delta { display: block; margin-top: 4px; font-size: 14px; text-transform: uppercase; color: var(--dim); }
+  #delta.changed { color: var(--mustard); }
+
+  .row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+  .row button { height: 84px; border-radius: 16px; text-transform: uppercase; font-size: 18px; font-weight: 800; background: var(--panel); border: 1px solid var(--line); }
+  #tap { font-size: 34px; background: var(--cream); color: var(--bg); border-color: var(--cream); }
+  #tap.flash { background: var(--mustard); border-color: var(--mustard); }
+  #stop { color: var(--hot); border-color: var(--hot); }
+  .row button:active { filter: brightness(1.25); }
+  #reset:disabled { opacity: .35; }
+
+  @media (orientation: landscape) {
+    .app { grid-template-columns: 1fr minmax(280px, 1fr); grid-template-rows: auto auto 1fr;
+           grid-template-areas: "stage head" "stage status" "stage controls"; column-gap: 24px; }
+    .controls { align-content: end; }
+    h1 { font-size: 28px; }
+    #bpm { font-size: 48px; }
+    .row button { height: 64px; }
+    .nudge { height: 52px; }
+  }
+
+  dialog { width: min(520px, 100%); max-width: 100%; margin: auto auto 0; border: 0; border-radius: 22px 22px 0 0; padding: 20px 20px calc(env(safe-area-inset-bottom) + 20px); background: var(--panel); color: var(--cream); font-family: var(--display); letter-spacing: .04em; }
+  dialog::backdrop { background: rgba(0,0,0,.65); }
+  dialog h2 { margin: 0 0 14px; font-size: 24px; text-transform: uppercase; color: var(--mustard); letter-spacing: .1em; }
+  .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 18px; }
+  .field .hint { display: block; font-size: 13px; font-weight: 500; color: var(--dim); letter-spacing: .02em; margin-top: 2px; }
+  .field input[type=number] { width: 96px; height: 48px; font: inherit; font-size: 22px; text-align: center; color: var(--cream); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; -webkit-user-select: text; user-select: text; }
+  .field input[type=checkbox] { width: 28px; height: 28px; accent-color: var(--mustard); }
+  .btn { display: inline-grid; place-items: center; min-height: 48px; padding: 0 16px; border-radius: 12px; background: var(--mustard); color: var(--bg); font-size: 17px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+  .btn.ghost { background: none; color: var(--cream); border: 1px solid var(--line); }
+  .btn.wide { width: 100%; margin-top: 14px; }
+  #msg { min-height: 18px; font-size: 14px; font-weight: 500; color: var(--hot); }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="face" viewBox="0 0 512 512">
+    <g transform="translate(0,-40)">
+      <rect x="92" y="178" width="328" height="15" rx="7.5"/>
+      <path id="lens" d="M100 196H232Q240 196 239 208Q232 288 166 288Q100 288 93 208Q92 196 100 196Z"/>
+      <use href="#lens" transform="translate(512,0) scale(-1,1)"/>
+      <path d="M256 330c-30-30-90-28-130 6c-22 18-40 48-46 78c40-4 70-18 96-34c30-18 56-22 80-8c24-14 50-10 80 8c26 16 56 30 96 34c-6-30-24-60-46-78c-40-34-100-36-130-6z"/>
+    </g>
+  </symbol>
+</svg>
+
+<main class="app">
+  <header>
+    <h1>Sabotage</h1>
+    <button id="gear" aria-label="Instellingen">
+      <svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1,0)"/></svg>
+    </button>
+  </header>
+
+  <div class="status">
+    <span id="wake" class="chip">Scherm</span>
+    <span id="sampleName" class="chip">Sample laden…</span>
+  </div>
+
+  <section class="stage">
+    <button id="trigger" aria-label="Speel sample">
+      <svg class="ring" viewBox="0 0 100 100"><circle id="prog" cx="50" cy="50" r="46" pathLength="100"/></svg>
+      <svg class="face"><use href="#face"/></svg>
+    </button>
+  </section>
+
+  <section class="controls">
+    <div class="tempo">
+      <button class="nudge" id="minus" aria-label="1 BPM langzamer">−</button>
+      <div class="readout">
+        <span id="bpm">168</span><small>BPM</small>
+        <span id="delta">Origineel tempo</span>
+      </div>
+      <button class="nudge" id="plus" aria-label="1 BPM sneller">+</button>
+    </div>
+    <div class="row">
+      <button id="tap">Tap</button>
+      <button id="reset">Origineel</button>
+      <button id="stop">Stop</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="settings">
+  <h2>Instellingen</h2>
+  <div class="field">
+    <span>Sample<span class="hint" id="sampleHint">Demo-geluid</span></span>
+    <label class="btn">Kies bestand<input id="file" type="file" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff"></label>
+  </div>
+  <div class="field">
+    <span>Origineel tempo<span class="hint">BPM van de sample zoals opgenomen</span></span>
+    <input id="orig" type="number" inputmode="decimal" min="40" max="300" step="0.1">
+  </div>
+  <div class="field">
+    <span>Herhalen<span class="hint">Sample blijft loopen tot je op stop drukt</span></span>
+    <input id="loop" type="checkbox">
+  </div>
+  <div class="field">
+    <span>Demo-geluid<span class="hint">Verwijdert je eigen sample uit de app</span></span>
+    <button class="btn ghost" id="useDemo">Terugzetten</button>
+  </div>
+  <div id="msg"></div>
+  <button class="btn wide" id="close" autofocus>Klaar</button>
+</dialog>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  };
+
+  // ---------- state ----------
+  let origBpm = store.get('origBpm', 168);
+  let bpm = origBpm;                 // elke start: origineel tempo
+  let loop = store.get('loop', false);
+  let sampleName = null;             // null = demo-geluid
+  const rate = () => bpm / origBpm;
+
+  // ---------- audio ----------
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let ctx = null, buffer = null, voice = null, pos = 0, lastT = 0, raf = 0;
+
+  // iPhone: ook geluid geven als de stilteschakelaar aan staat
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+
+  function getCtx() {
+    if (!ctx) ctx = new AC({ latencyHint: 'interactive' });
+    return ctx;
+  }
+  function wakeAudio() {
+    const c = getCtx();
+    if (c.state !== 'running') c.resume().catch(() => {});
+  }
+
+  function demoBuffer() {
+    const c = getCtx(), sr = c.sampleRate, step = 60 / 168 / 2, steps = 16;
+    const b = c.createBuffer(1, Math.floor(sr * step * steps), sr), d = b.getChannelData(0);
+    const pattern = [1,0,1,1, 0,1,0,1, 1,0,1,1, 0,1,1,0];
+    const notes = [220,220,262,220, 294,220,262,196];
+    for (let s = 0; s < steps; s++) {
+      if (!pattern[s]) continue;
+      const f = notes[s % 8], start = Math.floor(s * step * sr), n = Math.floor(step * sr * 0.9);
+      for (let i = 0; i < n && start + i < d.length; i++) {
+        const t = i / sr, env = Math.exp(-t * 9) * Math.min(1, i / 60);
+        const p1 = (t * f) % 1, p2 = (t * f * 1.012) % 1;
+        d[start + i] += env * 0.26 * ((p1 * 2 - 1) + (p2 * 2 - 1) + (p1 < 0.5 ? 0.5 : -0.5));
+      }
+    }
+    return b;
+  }
+
+  function trigger() {
+    if (!buffer) return;
+    wakeAudio();
+    stop();
+    const s = ctx.createBufferSource(), g = ctx.createGain();
+    s.buffer = buffer; s.loop = loop; s.playbackRate.value = rate();
+    s.connect(g); g.connect(ctx.destination);
+    const v = { s, g };
+    voice = v; pos = 0; lastT = ctx.currentTime;
+    s.onended = () => { if (voice === v) { voice = null; render(); } };
+    s.start();
+    render();
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    const v = voice;
+    if (!v) return;
+    voice = null;
+    const t = ctx.currentTime;
+    try {
+      v.g.gain.setValueAtTime(1, t);
+      v.g.gain.linearRampToValueAtTime(0, t + 0.012);
+      v.s.stop(t + 0.02);
+    } catch {}
+    render();
+  }
+
+  function tick() {
+    if (!voice) { $('prog').style.strokeDasharray = '0 100'; return; }
+    const now = ctx.currentTime;
+    pos += (now - lastT) * rate(); lastT = now;
+    const frac = buffer.duration ? (pos % buffer.duration) / buffer.duration : 0;
+    $('prog').style.strokeDasharray = (frac * 100).toFixed(2) + ' 100';
+    raf = requestAnimationFrame(tick);
+  }
+
+  // ---------- tempo ----------
+  function setBpm(v) {
+    bpm = Math.min(origBpm * 2, Math.max(origBpm * 0.5, v));
+    if (voice) voice.s.playbackRate.setValueAtTime(rate(), ctx.currentTime);
+    render();
+  }
+
+  let taps = [];
+  function tap(ts) {
+    if (taps.length && ts - taps[taps.length - 1] > 2000) taps = [];
+    taps.push(ts);
+    if (taps.length > 6) taps.shift();
+    if (taps.length >= 2) setBpm(60000 * (taps.length - 1) / (taps[taps.length - 1] - taps[0]));
+    const b = $('tap');
+    b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 90);
+  }
+
+  // ---------- scherm wakker houden ----------
+  let lock = null;
+  async function keepAwake() {
+    if (!('wakeLock' in navigator) || lock || document.visibilityState !== 'visible') { renderWake(); return; }
+    try {
+      lock = await navigator.wakeLock.request('screen');
+      lock.addEventListener('release', () => { lock = null; renderWake(); });
+    } catch {}
+    renderWake();
+  }
+  function renderWake() {
+    const el = $('wake');
+    el.className = 'chip ' + (lock ? 'ok' : 'warn');
+    el.textContent = lock ? 'Scherm blijft aan' : 'Let op: scherm kan uitgaan';
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') keepAwake();
+  });
+
+  // ---------- opslag van eigen sample ----------
+  function db() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('sabotage', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function dbOp(mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const q = fn(d.transaction('kv', mode).objectStore('kv'));
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  }
+
+  async function decode(bytes) {
+    return await getCtx().decodeAudioData(bytes.slice(0));
+  }
+
+  async function loadSaved() {
+    try {
+      const saved = await dbOp('readonly', s => s.get('sample'));
+      if (saved && saved.bytes) {
+        buffer = await decode(saved.bytes);
+        sampleName = saved.name;
+        render();
+        return;
+      }
+    } catch {}
+    buffer = demoBuffer(); sampleName = null; render();
+  }
+
+  async function loadFile(file) {
+    $('msg').textContent = '';
+    try {
+      const bytes = await file.arrayBuffer();
+      const decoded = await decode(bytes);
+      stop();
+      buffer = decoded; sampleName = file.name;
+      await dbOp('readwrite', s => s.put({ name: file.name, bytes }, 'sample'));
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } catch {
+      $('msg').textContent = 'Dit bestand kan niet worden afgespeeld. Probeer een wav, mp3 of m4a.';
+    }
+    render();
+  }
+
+  // ---------- weergave ----------
+  function render() {
+    $('bpm').textContent = (Math.round(bpm * 10) / 10).toString().replace('.', ',');
+    const pct = (rate() - 1) * 100, changed = Math.abs(bpm - origBpm) > 0.05;
+    const d = $('delta');
+    d.textContent = changed ? (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(1).replace('.', ',') + '% t.o.v. origineel' : 'Origineel tempo';
+    d.classList.toggle('changed', changed);
+    $('reset').disabled = !changed;
+    $('trigger').classList.toggle('playing', !!voice);
+    const label = sampleName || 'Demo-geluid';
+    const sn = $('sampleName');
+    sn.textContent = label; sn.className = 'chip ' + (sampleName ? 'ok' : '');
+    $('sampleHint').textContent = label;
+    if (document.activeElement !== $('orig')) $('orig').value = origBpm;
+    $('loop').checked = loop;
+  }
+
+  // ---------- bediening ----------
+  function press(el, fn) {
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      keepAwake();
+      fn(e);
+    });
+    el.addEventListener('click', e => { if (e.detail === 0) fn(e); }); // toetsenbord / schermlezer
+  }
+
+  const trig = $('trigger');
+  press(trig, () => { trig.classList.add('down'); trigger(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => trig.addEventListener(n, () => trig.classList.remove('down')));
+
+  press($('tap'), e => { wakeAudio(); tap(e.timeStamp || performance.now()); });
+  press($('stop'), stop);
+  press($('reset'), () => { taps = []; setBpm(origBpm); });
+  press($('minus'), () => setBpm(Math.round(bpm) - 1));
+  press($('plus'), () => setBpm(Math.round(bpm) + 1));
+
+  const dlg = $('settings');
+  $('gear').addEventListener('click', () => { render(); dlg.showModal(); });
+  $('close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  $('file').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ''; });
+  $('orig').addEventListener('change', e => {
+    const v = parseFloat(String(e.target.value).replace(',', '.'));
+    if (v >= 40 && v <= 300) { origBpm = v; store.set('origBpm', v); taps = []; setBpm(v); }
+    else render();
+  });
+  $('loop').addEventListener('change', e => {
+    loop = e.target.checked; store.set('loop', loop);
+    if (voice) voice.s.loop = loop;
+  });
+  $('useDemo').addEventListener('click', async () => {
+    stop();
+    try { await dbOp('readwrite', s => s.delete('sample')); } catch {}
+    buffer = demoBuffer(); sampleName = null; render();
+  });
+
+  // voetpedaal / toetsenbord: spatie of enter = sample, T = tap, esc = stop
+  document.addEventListener('keydown', e => {
+    if (dlg.open || e.repeat) return;
+    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); trigger(); }
+    else if (e.code === 'KeyT') tap(e.timeStamp || performance.now());
+    else if (e.code === 'Escape') stop();
+  });
+
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  render();
+  keepAwake();
+  loadSaved();
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
