@@ -1,6 +1,6 @@
 // Maakt de app offline bruikbaar: alles wordt bij het eerste bezoek opgeslagen.
-const CACHE = 'sabotage-v1';
-const ASSETS = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'sabotage-v2';
+const ASSETS = ['./', 'index.html', 'scratch.wav', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

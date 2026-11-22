@@ -103,6 +103,10 @@
   .field .hint { display: block; font-size: 13px; font-weight: 500; color: var(--dim); letter-spacing: .02em; margin-top: 2px; }
   .field input[type=number] { width: 96px; height: 48px; font: inherit; font-size: 22px; text-align: center; color: var(--cream); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; -webkit-user-select: text; user-select: text; }
   .field input[type=checkbox] { width: 28px; height: 28px; accent-color: var(--mustard); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .seg button { min-width: 48px; height: 48px; padding: 0 12px; font-size: 18px; font-weight: 800; border-left: 1px solid var(--line); }
+  .seg button:first-child { border-left: 0; }
+  .seg button.on { background: var(--mustard); color: var(--bg); }
   .btn { display: inline-grid; place-items: center; min-height: 48px; padding: 0 16px; border-radius: 12px; background: var(--mustard); color: var(--bg); font-size: 17px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
   .btn.ghost { background: none; color: var(--cream); border: 1px solid var(--line); }
   .btn.wide { width: 100%; margin-top: 14px; }
@@ -147,7 +151,7 @@
     <div class="tempo">
       <button class="nudge" id="minus" aria-label="1 BPM langzamer">−</button>
       <div class="readout">
-        <span id="bpm">168</span><small>BPM</small>
+        <span id="bpm">164</span><small>BPM</small>
         <span id="delta">Origineel tempo</span>
       </div>
       <button class="nudge" id="plus" aria-label="1 BPM sneller">+</button>
@@ -163,8 +167,14 @@
 <dialog id="settings">
   <h2>Instellingen</h2>
   <div class="field">
-    <span>Sample<span class="hint" id="sampleHint">Demo-geluid</span></span>
+    <span>Sample<span class="hint" id="sampleHint">Scratch (ingebouwd)</span></span>
     <label class="btn">Kies bestand<input id="file" type="file" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff"></label>
+  </div>
+  <div class="field">
+    <span>Lengte<span class="hint" id="lenHint">Aantal tellen per druk op de knop</span></span>
+    <div class="seg" id="len">
+      <button data-beats="4">4</button><button data-beats="8">8</button><button data-beats="16">16</button><button data-beats="0">Alles</button>
+    </div>
   </div>
   <div class="field">
     <span>Origineel tempo<span class="hint">BPM van de sample zoals opgenomen</span></span>
@@ -175,7 +185,7 @@
     <input id="loop" type="checkbox">
   </div>
   <div class="field">
-    <span>Demo-geluid<span class="hint">Verwijdert je eigen sample uit de app</span></span>
+    <span>Ingebouwde scratch<span class="hint">Verwijdert je eigen sample uit de app</span></span>
     <button class="btn ghost" id="useDemo">Terugzetten</button>
   </div>
   <div id="msg"></div>
@@ -192,7 +202,7 @@
   };
 
   // ---------- state ----------
-  let origBpm = store.get('origBpm', 168);
+  let origBpm = store.get('origBpm', 164);
   let bpm = origBpm;                 // elke start: origineel tempo
   let loop = store.get('loop', false);
   let sampleName = null;             // null = demo-geluid
@@ -201,6 +211,23 @@
   // ---------- audio ----------
   const AC = window.AudioContext || window.webkitAudioContext;
   let ctx = null, buffer = null, voice = null, pos = 0, lastT = 0, raf = 0;
+  let full = null;                             // de hele sample; buffer = het stuk dat klinkt
+  let lenBeats = store.get('lenBeats', 8);     // tellen op origineel tempo, 0 = alles
+
+  const lenSecs = () => lenBeats ? lenBeats * 60 / origBpm : Infinity;
+  function applyLength() {
+    if (!full) return;
+    const n = Math.min(full.length, Math.round(lenSecs() * full.sampleRate));
+    if (n >= full.length) { buffer = full; return; }
+    const cut = getCtx().createBuffer(full.numberOfChannels, n, full.sampleRate);
+    const fade = Math.min(n, Math.round(0.012 * full.sampleRate));   // korte uitloop, geen tik
+    for (let ch = 0; ch < full.numberOfChannels; ch++) {
+      const d = cut.getChannelData(ch);
+      d.set(full.getChannelData(ch).subarray(0, n));
+      for (let i = 0; i < fade; i++) d[n - 1 - i] *= i / fade;
+    }
+    buffer = cut;
+  }
 
   // iPhone: ook geluid geven als de stilteschakelaar aan staat
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
@@ -330,13 +357,28 @@
     try {
       const saved = await dbOp('readonly', s => s.get('sample'));
       if (saved && saved.bytes) {
-        buffer = await decode(saved.bytes);
+        full = await decode(saved.bytes); applyLength();
         sampleName = saved.name;
         render();
         return;
       }
     } catch {}
-    buffer = demoBuffer(); sampleName = null; render();
+    await loadBuiltIn();
+  }
+
+  // ingebouwde scratch (scratch.wav); lukt dat niet, dan een simpel noodgeluid
+  let builtIn = 'Scratch (ingebouwd)';
+  async function loadBuiltIn() {
+    try {
+      const r = await fetch('scratch.wav');
+      if (!r.ok) throw new Error('niet gevonden');
+      full = await decode(await r.arrayBuffer());
+      builtIn = 'Scratch (ingebouwd)';
+    } catch {
+      full = demoBuffer(); builtIn = 'Noodgeluid';
+    }
+    applyLength();
+    sampleName = null; render();
   }
 
   async function loadFile(file) {
@@ -345,7 +387,7 @@
       const bytes = await file.arrayBuffer();
       const decoded = await decode(bytes);
       stop();
-      buffer = decoded; sampleName = file.name;
+      full = decoded; applyLength(); sampleName = file.name;
       await dbOp('readwrite', s => s.put({ name: file.name, bytes }, 'sample'));
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     } catch {
@@ -363,12 +405,15 @@
     d.classList.toggle('changed', changed);
     $('reset').disabled = !changed;
     $('trigger').classList.toggle('playing', !!voice);
-    const label = sampleName || 'Demo-geluid';
+    const label = sampleName || builtIn;
     const sn = $('sampleName');
     sn.textContent = label; sn.className = 'chip ' + (sampleName ? 'ok' : '');
     $('sampleHint').textContent = label;
     if (document.activeElement !== $('orig')) $('orig').value = origBpm;
     $('loop').checked = loop;
+    for (const b of $('len').children) b.classList.toggle('on', Number(b.dataset.beats) === lenBeats);
+    const secs = buffer ? buffer.duration.toFixed(1).replace('.', ',') + ' s' : '';
+    $('lenHint').textContent = (lenBeats ? lenBeats + ' tellen per druk' : 'Hele sample per druk') + (secs ? ' (' + secs + ')' : '');
   }
 
   // ---------- bediening ----------
@@ -398,8 +443,14 @@
   $('file').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ''; });
   $('orig').addEventListener('change', e => {
     const v = parseFloat(String(e.target.value).replace(',', '.'));
-    if (v >= 40 && v <= 300) { origBpm = v; store.set('origBpm', v); taps = []; setBpm(v); }
+    if (v >= 40 && v <= 300) { origBpm = v; store.set('origBpm', v); taps = []; stop(); applyLength(); setBpm(v); }
     else render();
+  });
+  $('len').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    lenBeats = Number(b.dataset.beats); store.set('lenBeats', lenBeats);
+    stop(); applyLength(); render();
   });
   $('loop').addEventListener('change', e => {
     loop = e.target.checked; store.set('loop', loop);
@@ -408,7 +459,7 @@
   $('useDemo').addEventListener('click', async () => {
     stop();
     try { await dbOp('readwrite', s => s.delete('sample')); } catch {}
-    buffer = demoBuffer(); sampleName = null; render();
+    await loadBuiltIn();
   });
 
   // voetpedaal / toetsenbord: spatie of enter = sample, T = tap, esc = stop
